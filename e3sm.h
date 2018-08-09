@@ -30,5 +30,6 @@ SOFTWARE.
 #include <string.h>
 #include "mpi.h"
 
+#include "occa.hpp"
 #include "setupAide.hpp"
 

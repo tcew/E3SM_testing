@@ -69,6 +69,9 @@ int main(int argc, char **argv){
     sprintf(deviceConfig, "mode: 'Serial' ");
   }
 
+  occa::device device;
+  device.setup(deviceConfig);
+
   // close down MPI
   MPI_Finalize();
 
