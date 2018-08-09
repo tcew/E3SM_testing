@@ -33,3 +33,5 @@ SOFTWARE.
 #include "occa.hpp"
 #include "setupAide.hpp"
 
+#define dfloat double
+#define dfloatString "double"

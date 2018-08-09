@@ -41,15 +41,19 @@ int main(int argc, char **argv){
   
   // set up mesh stuff
   string fileName;
-  int N, Nz, Nstencil, Nfields;
+  int Nelements, N, Nz, Nstencil, Nfields, NblockDivFlux;
 
+  options.getArgs("NUMBER ELEMENTS", Nelements);
   options.getArgs("HORIZONTAL POLYNOMIAL DEGREE", N);
   options.getArgs("VERTICAL RESOLUTION", Nz);
   options.getArgs("VERTICAL STENCIL", Nstencil);
   options.getArgs("NUMBER FIELDS", Nfields);
+  options.getArgs("NUMBER ELEMENTS PER BLOCK", NblockDivFlux);
 
   int Nvgeo = 5;
   int Nq = N+1;
+  int NpHorizontal = Nq*Nq;
+  int Np = NpHorizontal*Nz;
 
   int RXID = 0, SXID = 0, RYID = 0, SYID = 0, TZID = 0;
   
@@ -94,7 +98,7 @@ int main(int argc, char **argv){
   props["defines/p_Nstencil"] = Nstencil;
   props["defines/p_Nvgeo"] = Nvgeo;
 
-  props["defines/dfloat"] = "double";
+  props["defines/dfloat"] = dfloatString;
   props["defines/dlong"] = "int";
 
   props["defines/p_RXID"] = RXID;
@@ -102,9 +106,24 @@ int main(int argc, char **argv){
   props["defines/p_RYID"] = RYID;
   props["defines/p_SYID"] = SYID;
   props["defines/p_TZID"] = TZID;
+
+  props["defines/p_NblockDivFlux"] = NblockDivFlux;
   
   // build kernel
-  occa::kernel kernel = device.buildKernel("okl/E3SM.okl", "E3SM_divFlux", props); 
+  occa::kernel divFluxKernel = device.buildKernel("okl/E3SM.okl", "E3SM_divFlux", props); 
+
+  // build arrays
+  occa::memory o_vgeo = device.malloc(Nelements*Nvgeo*NpHorizontal*sizeof(dfloat));
+  occa::memory o_q = device.malloc(Nelements*Np*Nfields*sizeof(dfloat));
+  occa::memory o_divFluxq = device.malloc(Nelements*Np*Nfields*sizeof(dfloat));
+  occa::memory o_Dh = device.malloc(Nq*Nq*sizeof(dfloat));
+  occa::memory o_Dv = device.malloc(Nq*Nstencil*sizeof(dfloat));
+
+  int Ntests = 10;
+  for(int loop=0;loop<Ntests;++loop)
+    divFluxKernel(Nelements, o_vgeo, o_Dh, o_Dv, o_q, o_divFluxq);
+
+  device.finish();
   
   // close down MPI
   MPI_Finalize();
