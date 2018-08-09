@@ -22,11 +22,11 @@ void fluxFunctions(dfloat *q, dfloat *fx, dfloat *fy, dfloat *fz){
 #define E3SM_divFlux_v1 E3SM_divFlux
 
 @kernel void E3SM_divFlux_v0(const dlong Nelements,
-			  @restrict const dfloat *vgeo,
-			  @restrict const dfloat *Dh, // ref D matrix in horizontal
-			  @restrict const dfloat *Dv, // ref D matrix in vertical
-			  @restrict const dfloat *q,
-			  @restrict dfloat *divFluxq){
+			     @restrict const dfloat *vgeo,
+			     @restrict const dfloat *Dh, // ref D matrix in horizontal
+			     @restrict const dfloat *Dv, // ref D matrix in vertical
+			     @restrict const dfloat *q,
+			     @restrict dfloat *divFluxq){
   
   for(dlong eo=0;eo<Nelements;++eo;@outer(0)){
       
@@ -196,7 +196,7 @@ void fluxFunctions(dfloat *q, dfloat *fx, dfloat *fy, dfloat *fz){
 	  for(int fld=0;fld<p_Nfields;++fld){
 	    const dlong id  = base + p_Nq*p_Nq*k + fld*p_Nz*p_Nq*p_Nq;
 
-	    divFluxq[base] = 
+	    divFluxq[id] = 
 	      r_drdx*fxr[fld] + r_dsdx*fxs[fld] + 
 	      r_drdy*fyr[fld] + r_dsdy*fys[fld] + 
 	      r_dtdz*fzt[fld];
@@ -300,11 +300,12 @@ void fluxFunctions(dfloat *q, dfloat *fx, dfloat *fy, dfloat *fz){
 		}
 	      }
 	      
-	      dfloat r_q[p_Nfields];
-	      
 	      const dlong e = eo + es;
 
 	      if(e<Nelements){
+
+		dfloat r_q[p_Nfields];
+		
 		const dlong base = e*p_Nz*p_Nq*p_Nq*p_Nfields + j*p_Nq + i;
 		
 		// fetch first stencil to register
@@ -333,8 +334,8 @@ void fluxFunctions(dfloat *q, dfloat *fx, dfloat *fy, dfloat *fz){
 	    
 #pragma unroll p_Nfields
 	    for(int fld=0;fld<p_Nfields;++fld){
-	      s_fx[es][fld][j][i] = r_fx[k][fld];
-	      s_fy[es][fld][j][i] = r_fy[k][fld];
+	      s_fx[es][fld][j][i] = r_fx[p_Nstencil-1][fld]; // HMMMMMMM
+	      s_fy[es][fld][j][i] = r_fy[p_Nstencil-1][fld];
 	    }
 	  }
 	}
@@ -400,7 +401,7 @@ void fluxFunctions(dfloat *q, dfloat *fx, dfloat *fy, dfloat *fz){
 	      for(int fld=0;fld<p_Nfields;++fld){
 		const dlong id  = base + p_Nq*p_Nq*k + fld*p_Nz*p_Nq*p_Nq;
 		
-		divFluxq[base] = 
+		divFluxq[id] = 
 		  r_drdx*fxr[fld] + r_dsdx*fxs[fld] + 
 		  r_drdy*fyr[fld] + r_dsdy*fys[fld] + 
 		  r_dtdz*fzt[fld];
