@@ -19,7 +19,7 @@ void fluxFunctions(dfloat *q, dfloat *fx, dfloat *fy, dfloat *fz){
   fz[3] = rw*rw/r + r;
 }
 
-#define E3SM_divFlux_v1 E3SM_divFlux
+#define E3SM_divFlux_v0 E3SM_divFlux
 
 @kernel void E3SM_divFlux_v0(const dlong Nelements,
 			     @restrict const dfloat *vgeo,
