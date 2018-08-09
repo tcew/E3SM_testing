@@ -32,7 +32,7 @@ int main(int argc, char **argv){
   MPI_Init(&argc, &argv);
 
   if(argc!=2){
-    printf("usage: ./cnsMain setupfile\n");
+    printf("usage: ./e3smMain setupfile\n");
     exit(-1);
   }
 
@@ -41,11 +41,18 @@ int main(int argc, char **argv){
   
   // set up mesh stuff
   string fileName;
-  int N, Nz;
+  int N, Nz, Nstencil, Nfields;
 
-  options.getArgs("POLYNOMIAL DEGREE", N);
+  options.getArgs("HORIZONTAL POLYNOMIAL DEGREE", N);
   options.getArgs("VERTICAL RESOLUTION", Nz);
+  options.getArgs("VERTICAL STENCIL", Nstencil);
+  options.getArgs("NUMBER FIELDS", Nfields);
 
+  int Nvgeo = 5;
+  int Nq = N+1;
+
+  int RXID = 0, SXID = 0, RYID = 0, SYID = 0, TZID = 0;
+  
   char deviceConfig[BUFSIZ];
 
   int device_id, platform_id;
@@ -69,9 +76,36 @@ int main(int argc, char **argv){
     sprintf(deviceConfig, "mode: 'Serial' ");
   }
 
+  // get and configure device
   occa::device device;
   device.setup(deviceConfig);
 
+  occa::properties props;
+
+  props["defines"].asObject();
+  props["includes"].asArray();
+  props["header"].asArray();
+  props["flags"].asObject();
+
+
+  props["defines/p_Nfields"] = Nfields;
+  props["defines/p_Nq"] = Nq;
+  props["defines/p_Nz"] = Nz;
+  props["defines/p_Nstencil"] = Nstencil;
+  props["defines/p_Nvgeo"] = Nvgeo;
+
+  props["defines/dfloat"] = "double";
+  props["defines/dlong"] = "int";
+
+  props["defines/p_RXID"] = RXID;
+  props["defines/p_SXID"] = SXID;
+  props["defines/p_RYID"] = RYID;
+  props["defines/p_SYID"] = SYID;
+  props["defines/p_TZID"] = TZID;
+  
+  // build kernel
+  occa::kernel kernel = device.buildKernel("okl/E3SM.okl", "E3SM_divFlux", props); 
+  
   // close down MPI
   MPI_Finalize();
 

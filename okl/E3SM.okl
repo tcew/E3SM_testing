@@ -1,26 +1,45 @@
 
+void fluxFunctions(dfloat *q, dfloat *fx, dfloat *fy, dfloat *fz){
+
+  dfloat r = q[0], ru = q[1], rv = q[2], rw = q[3];
+
+  // mass
+  fx[0] = ru;
+  fy[0] = rv;
+
+  // x-momentum
+  fx[1] = ru*ru/r + r;
+  fy[1] = ru*rv/r;
+
+  // y-momentum
+  fx[2] = ru*rv/r;
+  fy[2] = rv*rv/r + r;
+
+  // z-momentum
+  fz[3] = rw*rw/r + r;
+}
 
 @kernel void E3SM_divFlux(const dlong Nelements,
-			  @restrict const dfloat *geofacs,
+			  @restrict const dfloat *vgeo,
 			  @restrict const dfloat *Dh, // ref D matrix in horizontal
 			  @restrict const dfloat *Dv, // ref D matrix in vertical
 			  @restrict const dfloat *q,
 			  @restrict const dfloat *divFluxq){
   
   for(dlong eo=0;eo<Nelements;++eo;@outer(0)){
+      
+    @shared dfloat s_Dh[p_Nq][p_Nq];
+    @shared dfloat s_Dv[p_Nq][p_Nstencil];
     
-    shared dfloat s_Dh[p_Nq][p_Nq];
-    shared dfloat s_Dv[p_Nq][p_Nstencil];
-    
-    shared dfloat s_fx[p_Nfields][p_Nq][p_Nq];
-    shared dfloat s_fy[p_Nfields][p_Nq][p_Nq];
+    @shared dfloat s_fx[p_Nfields][p_Nq][p_Nq];
+    @shared dfloat s_fy[p_Nfields][p_Nq][p_Nq];
 
     // should be exclusive (but only allowd 1D exclusive arrays)
     dfloat r_fx[p_Nstencil][p_Nfields];
     dfloat r_fy[p_Nstencil][p_Nfields];
     dfloat r_fz[p_Nstencil][p_Nfields];    
     
-    exclusive dfloat r_drdx, r_drdy, r_dsdx, r_dsdy, r_dtdz;
+    @exclusive dfloat r_drdx, r_drdy, r_dsdx, r_dsdy, r_dtdz;
     
     for(int j=0;j<p_Nq;++j;@inner(1)){
       for(int i=0;i<p_Nq;++i;@inner(0)){
@@ -36,14 +55,14 @@
 	
 	const dlong e = eo;
 	if(e<Nelements){
-	  dfloat r_q [p_Nfields];
+	  dfloat r_q[p_Nfields];
 
-	  const dlong base = e*p_Nz*p_Nq*p_Nq*Nfields + j*p_Nq + i;
+	  const dlong base = e*p_Nz*p_Nq*p_Nq*p_Nfields + j*p_Nq + i;
 	  
 	  // fetch first stencil to register
-	  @unroll(p_Nstencil)
+#pragma unroll p_Nstencil
 	    for(int k=0;k<p_Nstencil;++k){
-	      @unroll(p_Nfields)
+#pragma unroll p_Nfields
 		for(int fld=0;fld<p_Nfields;++fld){
 		  const dlong id  = base + p_Nq*p_Nq*k + fld*p_Nz*p_Nq*p_Nq;
 		  r_q[fld] = q[id];
@@ -68,88 +87,110 @@
     }
     
     // loop over z (radial axis)
-    @unroll(p_Nz)
-      for(int k=0;k<p_Nz;++k){
-	
-	// roll q if in moving stencil regime
-	if(k>=p_Nstencil && k<p_Nz-p_Nstencil){ // check this logic
-	  @unroll(p_Nstencil)
-	    for(int ks=1;ks<p_Nstencil;++ks){	  
-	      r_fx[ks-1] = r_fx[ks];
-	      r_fy[ks-1] = r_fy[ks];
-	      r_fz[ks-1] = r_fz[ks];
-	    }
-	  // compute flux at level k
-	  fluxFunctions(r_q, r_fx[p_Nstencil-1], r_fy[p_Nstencil-1], r_fz[p_Nstencil-1]);
-	}
+#pragma unroll p_Nz
+    for(int k=0;k<p_Nz;++k){
 
-	// make sure s_fx, s_fy is safe to write to 
-	@barrier("local");
-
-	// share horizontal fluxes
-	for(int j=0;j<p_Nq;++j;@inner(1)){
-	  for(int i=0;i<p_Nq;++i;@inner(0)){
-	    for(int fld=0;fld<p_Nfields;++fld){
-	      s_fx[fld][j][i] = r_fx[k][fld];
-	      s_fy[fld][j][i] = r_fy[k][fld];
-	    }
-	  }
-	}
-	
-	// make sure s_fx, s_fy stored
-	@barrier("local");
-	
-	// horizontal and vertical divergence
-	for(int j=0;j<p_Nq;++j;@inner(1)){
-	  for(int i=0;i<p_Nq;++i;@inner(0)){
+      for(int j=0;j<p_Nq;++j;@inner(1)){
+	for(int i=0;i<p_Nq;++i;@inner(0)){
+	  
+	  // roll q if in moving stencil regime
+	  if(k>=p_Nstencil && k<p_Nz-p_Nstencil){ // check this logic
 	    
-	    // compute horizontal derivatives 
-	    dfloat fxr[p_Nfields], fxs[p_Nfields];
-	    dfloat fyr[p_Nfields], fys[p_Nfields];
-
-	    // vertical derivatives
-	    dfloat fzt[p_Nfields];
-
+#pragma unroll p_Nfields
 	    for(int fld=0;fld<p_Nfields;++fld){
-	      fxr[fld] = 0;
-	      fxs[fld] = 0;
-	      fyr[fld] = 0;
-	      fys[fld] = 0;
-	      fzt[fld] = 0;
-	    }
-	    
-	    for(int n=0;n<p_Nq;++n){
-	      const dfloat Din = s_Dh[i][n];
-	      const dfloat Djn = s_Dh[j][n];
-
-	      for(int fld=0;fld<p_Nfields;++fld){
-		fxr[fld] += Din*s_fx[fld][j][n];
-		fxs[fld] += Djn*s_fx[fld][n][i];
-		
-		fyr[fld] += Din*s_fy[fld][j][n];
-		fys[fld] += Djn*s_fy[fld][n][i];
+#pragma unroll p_Nstencil
+	      for(int ks=1;ks<p_Nstencil;++ks){	  
+		r_fx[ks-1][fld] = r_fx[ks][fld];
+		r_fy[ks-1][fld] = r_fy[ks][fld];
+		r_fz[ks-1][fld] = r_fz[ks][fld];
 	      }
 	    }
-
-	    for(int n=0;n<p_Nstencil;++n){
-	      const dfloat Dkn = s_Dv[k][n];
-	      for(int fld=0;fld<p_Nfields;++fld){
-		fzt[fld] += Dkn*r_fz[fld];
-	      }
-	    }
+	  
+	    dfloat r_q[p_Nfields];
 	    
-	    const dlong base = e*p_Nz*p_Nq*p_Nq*Nfields + j*p_Nq + i;
-
+	    const dlong e = eo;
+	    const dlong base = e*p_Nz*p_Nq*p_Nq*p_Nfields + j*p_Nq + i;
+	    
+	    // fetch first stencil to register
 	    for(int fld=0;fld<p_Nfields;++fld){
 	      const dlong id  = base + p_Nq*p_Nq*k + fld*p_Nz*p_Nq*p_Nq;
-	      divFlux[base] = 
-		drdx*fxr[fld] + dsdx*fxs[fld] + 
-		drdy*fyr[fld] + dsdy*fys[fld] + 
-		dtdz*fzt[fld];
+	      r_q[fld] = q[id];
 	    }
+	    
+	    // compute flux at level k
+	    fluxFunctions(r_q, r_fx[p_Nstencil-1], r_fy[p_Nstencil-1], r_fz[p_Nstencil-1]);
 	  }
 	}
       }
+
+      // make sure s_fx, s_fy is safe to write to 
+      @barrier("local");
+      
+      // share horizontal fluxes
+      for(int j=0;j<p_Nq;++j;@inner(1)){
+	for(int i=0;i<p_Nq;++i;@inner(0)){
+	  for(int fld=0;fld<p_Nfields;++fld){
+	    s_fx[fld][j][i] = r_fx[k][fld];
+	    s_fy[fld][j][i] = r_fy[k][fld];
+	  }
+	}
+      }
+      
+      // make sure s_fx, s_fy stored
+      @barrier("local");
+      
+      // horizontal and vertical divergence
+      for(int j=0;j<p_Nq;++j;@inner(1)){
+	for(int i=0;i<p_Nq;++i;@inner(0)){
+	  
+	  // compute horizontal derivatives 
+	  dfloat fxr[p_Nfields], fxs[p_Nfields];
+	  dfloat fyr[p_Nfields], fys[p_Nfields];
+	  
+	  // vertical derivatives
+	  dfloat fzt[p_Nfields];
+	  
+	  for(int fld=0;fld<p_Nfields;++fld){
+	    fxr[fld] = 0;
+	    fxs[fld] = 0;
+	    fyr[fld] = 0;
+	    fys[fld] = 0;
+	    fzt[fld] = 0;
+	  }
+	  
+	  for(int n=0;n<p_Nq;++n){
+	    const dfloat Din = s_Dh[i][n];
+	    const dfloat Djn = s_Dh[j][n];
+	    
+	    for(int fld=0;fld<p_Nfields;++fld){
+	      fxr[fld] += Din*s_fx[fld][j][n];
+	      fxs[fld] += Djn*s_fx[fld][n][i];
+	      
+	      fyr[fld] += Din*s_fy[fld][j][n];
+	      fys[fld] += Djn*s_fy[fld][n][i];
+	    }
+	  }
+
+	  for(int n=0;n<p_Nstencil;++n){
+	    const dfloat Dkn = s_Dv[k][n];
+	    for(int fld=0;fld<p_Nfields;++fld){
+	      fzt[fld] += Dkn*r_fz[n][fld];
+	    }
+	  }
+
+	  const dlong e = eo;
+	  const dlong base = e*p_Nz*p_Nq*p_Nq*p_Nfields + j*p_Nq + i;
+	  
+	  for(int fld=0;fld<p_Nfields;++fld){
+	    const dlong id  = base + p_Nq*p_Nq*k + fld*p_Nz*p_Nq*p_Nq;
+	    divFluxq[base] = 
+	      r_drdx*fxr[fld] + r_dsdx*fxs[fld] + 
+	      r_drdy*fyr[fld] + r_dsdy*fys[fld] + 
+	      r_dtdz*fzt[fld];
+	  }
+	}
+      }
+    }
   }    
   
 }
